@@ -1,0 +1,12 @@
+[project]
+name = "sisap2026-python"
+version = "0.1.0"
+description = "Inspect SISAP 2026 HDF5 dataset"
+requires-python = ">=3.12"
+dependencies = [
+    "h5py",
+    "huggingface-hub",
+]
+
+[tool.uv]
+dev-dependencies = []
