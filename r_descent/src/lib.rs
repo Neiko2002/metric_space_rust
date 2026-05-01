@@ -397,7 +397,85 @@ pub fn check_apply_update(
     }
 }
 
+pub fn get_nn_table_up_to_phase2_bsp<C: BitsContainer, const W: usize>(
+    dao: Rc<Dao<EvpBits<C, W>>>,
+    neighbourlarities: &Array2<Nality>,
+    num_neighbours: usize,
+    delta: f64,
+    reverse_list_size: usize,
+) {
+    let num_data = dao.num_data;
+    let data = dao.get_data();
+    let mut neighbour_is_new =
+        Array2::from_shape_fn((num_data, num_neighbours), |_| AtomicBool::new(true));
+    let mut work_done: AtomicUsize = AtomicUsize::new(num_data);
+
+    // Phase 1
+    let now = Instant::now();
+    let mut new: Array2<Nality> =
+        Array2::from_elem((num_data, num_neighbours), Nality::new_empty());
+    let mut old: Array2<Nality> =
+        Array2::from_elem((num_data, num_neighbours), Nality::new_empty());
+
+    for row in 0..num_data {
+        let row_flags = neighbour_is_new.row_mut(row);
+        let new_indices = row_flags
+            .iter()
+            .enumerate()
+            .filter_map(|(index, flag)| if flag.load(Ordering::Relaxed) { Some(index) } else { None })
+            .collect::<Array1<usize>>();
+        let old_indices = row_flags
+            .iter()
+            .enumerate()
+            .filter_map(|(index, flag)| if !flag.load(Ordering::Relaxed) { Some(index) } else { None })
+            .collect::<Array1<usize>>();
+        let sampled = rand_perm(new_indices.len(), (new_indices.len() as f64).round() as u64 as usize);
+        let mut new_row_view: ArrayViewMut1<Nality> = new.row_mut(row);
+        let mut old_row_view: ArrayViewMut1<Nality> = old.row_mut(row);
+        let mut neighbour_row_view: ArrayViewMut1<AtomicBool> = neighbour_is_new.row_mut(row);
+        fill_selected(&mut new_row_view, &neighbourlarities.row(row), &sampled.view());
+        fill_selected(&mut old_row_view, &neighbourlarities.row(row), &old_indices.view());
+        fill_false_atomic_from_selectors(&mut neighbour_row_view, &sampled.view())
+    }
+    log::debug!("Phase 1 (debug): {} ms", ((Instant::now() - now).as_millis() as f64));
+
+    // Phase 2
+    let now = Instant::now();
+    let mut reverse: Array2<Nality> =
+        Array2::from_elem((num_data, reverse_list_size), Nality::new_empty());
+    let mut reverse_count = Array1::from_elem(num_data, 0);
+
+    for row in 0..num_data {
+        let this_row_neighbourlarities = &neighbourlarities.row(row);
+        for id in 0..num_neighbours {
+            let this_id = this_row_neighbourlarities[id].id().as_usize();
+            let local_sim = this_row_neighbourlarities[id].sim();
+            let new_forward_links = new.row(this_id);
+            let forward_links_dont_contain_this = !new_forward_links.iter().any(|x| x.id().as_usize() == row);
+            if forward_links_dont_contain_this {
+                if reverse_count[this_id] < reverse_list_size {
+                    reverse[[this_id, reverse_count[this_id]]] = Nality::new(
+                        local_sim,
+                        GlobalAddress::into(row.try_into().unwrap_or_else(|_| panic!("Cannot convert usize to u32"))),
+                    );
+                    reverse_count[this_id] = reverse_count[this_id] + 1;
+                } else {
+                    let (position, value) = min_index_and_value_neighbourlarities(&reverse.row(this_id));
+                    if value.sim() < local_sim {
+                        reverse[[this_id, position as usize]] = Nality::new(
+                            local_sim,
+                            GlobalAddress::into(row.try_into().unwrap_or_else(|_| panic!("Cannot convert usize to u32"))),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    log::debug!("Phase 2 (debug): {} ms", ((Instant::now() - now).as_millis() as f64));
+}
+
 pub fn get_nn_table2_bsp<C: BitsContainer, const W: usize>(
+
     dao: Rc<Dao<EvpBits<C, W>>>,
     neighbourlarities: &Array2<Nality>,
     num_neighbours: usize,

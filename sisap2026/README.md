@@ -49,6 +49,14 @@ cargo run --release -p sisap2026 --bin challenge1 <INPUT_H5_PATH> <OUTPUT_H5_PAT
 cargo run --release -p sisap2026 --bin challenge1 "C:\Users\Neiko\.cache\huggingface\hub\datasets--sisap-challenges--SISAP2026\snapshots\67a012fdc69f52b1974e97053dcf47a41ad5eec4\benchmark-dev-wikipedia-bge-m3-small.h5" "C:\Lang\Rust\metric_space_rust\output_challenge1.h5"
 ```
 
-Note: These processes are computationally intensive and may take several minutes to complete.
+### 3. Debug Phase 2
+Used to debug the R-Descent process by stopping after Phase 2 and printing the results.
+```powershell
+cargo run --release -p sisap2026 --bin debug_phase2 <INPUT_H5_PATH> <OUTPUT_H5_PATH>
+```
+**Example:**
+```powershell
+cargo run --release -p sisap2026 --bin debug_phase2 "C:\Users\Neiko\.cache\huggingface\hub\datasets--sisap-challenges--SISAP2026\snapshots\67a012fdc69f52b1974e97053dcf47a41ad5eec4\benchmark-dev-wikipedia-bge-m3-small.h5" "C:\Lang\Rust\metric_space_rust\output_debug.h5"
+```
 
 
