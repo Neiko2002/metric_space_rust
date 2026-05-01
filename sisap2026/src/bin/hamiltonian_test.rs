@@ -58,6 +58,7 @@ fn main() -> Result<()> {
     );
 
     //----- Set up Hamiltonian machinery
+    log::info!("Building Pascal triangle and lookup tables...");
 
     // Build Pascal triangle
     let pas_tri: Vec<Vec<f64>> = make_pascal(D);
@@ -74,10 +75,12 @@ fn main() -> Result<()> {
             &pas_tri,
         ));
     }
+    log::info!("Pascal triangle and lookup tables ready.");
 
     const start_index1: usize = 0;
     let code_size = 25; // The number of levels in the simplex rep too big but OK - TODO make this something more reasoned
 
+    log::info!("Starting to build NN table...");
     let nn_table1 = get_nn_table(
         &data_f16,
         NON_ZEROS,
@@ -118,18 +121,24 @@ fn get_nn_table(
 ) -> Array2<usize> {
     let data_size = data_f16.len();
 
+    log::info!("Computing Hamiltonian values for all data points...");
     let hamiltonian_values_in_data_order =
         get_hamiltonians_in_data_order(&data_f16, x, D, &cycles, &tables, &pas_tri, data_size);
+    log::info!("Hamiltonian values computed.");
 
     // hamiltonian_order_to_data_order maps from hamiltonian order to data order
+    log::info!("Sorting Hamiltonian values...");
     let hamiltonian_order_to_data_order = get_hamiltonian_order(&hamiltonian_values_in_data_order);
     arg_sort_small_to_big_1d_f64(&hamiltonian_values_in_data_order);
     let hamiltonian_order_to_data_order: Array1<usize> =
         Array1::from(hamiltonian_order_to_data_order); // retype the indices so we can use views over the window
+    log::info!("Sorting complete.");
 
     const window_size: usize = 1000;
     const num_neighbours: usize = 15;
     let mut slice_start = 0;
+    let mut chunk_count = 0;
+    let start_time = Instant::now();
 
     // create a nn table
     let mut nn_table: Array2<usize> = Array2::<usize>::zeros((data_size, num_neighbours));
@@ -167,6 +176,19 @@ fn get_nn_table(
         }
 
         slice_start += window_size;
+        chunk_count += 1;
+        if chunk_count % 10 == 0 {
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let total_chunks = data_size / window_size;
+            let remaining = (elapsed / chunk_count as f64) * (total_chunks - chunk_count) as f64;
+            log::info!(
+                "Processed {}/{} chunks... Elapsed: {:.2}s, Est. Remaining: {:.2}s",
+                chunk_count,
+                total_chunks,
+                elapsed,
+                remaining
+            );
+        }
     }
 
     print!("First 2 lines of approx NNS: ");
@@ -205,11 +227,23 @@ fn get_hamiltonians_in_data_order(
 ) -> Vec<f64> {
     // hamiltonian_values_in_data_order map from original data index to Hamiltonian f64 vertex values
     let mut hamiltonian_values_in_data_order = Vec::with_capacity(data_size);
+    let start_time = Instant::now();
     // Turn the f16 data into Hamiltonian f64 vertex numbers and add to snake_positions_from_data data structure
-    for vertex in data_f16 {
+    for (i, vertex) in data_f16.iter().enumerate() {
         let vertex: Vec<bool> = f16_vec_to_bool_vec(&vertex);
         let v_no: f64 = get_vertex_number(x, D, vertex, &cycles, &tables, &pas_tri);
         hamiltonian_values_in_data_order.push(v_no);
+        if (i + 1) % 10000 == 0 {
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let remaining = (elapsed / (i + 1) as f64) * (data_size - (i + 1)) as f64;
+            log::info!(
+                "Converted {}/{} vertices... Elapsed: {:.2}s, Est. Remaining: {:.2}s",
+                i + 1,
+                data_size,
+                elapsed,
+                remaining
+            );
+        }
     }
     hamiltonian_values_in_data_order
 }

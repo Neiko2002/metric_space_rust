@@ -110,12 +110,16 @@ fn main() -> Result<()> {
 
     log::info!("Creating NN table");
 
+    log::info!("Creating Dao from data...");
     let dao_bsp: Rc<Dao<EvpBits<Simd256x4, 1024>>> = Rc::new(
         dao_from_data::<Simd256x4, 1024>(data, "Wikipedia".to_string(), "Wikipedia".to_string())
             .unwrap(),
     );
+    log::info!("Dao created.");
 
+    log::info!("Starting R-Descent indexing (this may take a while)...");
     let descent = dao_bsp.into_rdescent(num_neighbours, reverse_list_size, delta);
+    log::info!("R-Descent indexing finished.");
 
     let end = Instant::now();
 
@@ -134,19 +138,26 @@ fn main() -> Result<()> {
     // Add 1 to all elements (preserving shape)
     let neighbours = neighbours.mapv(|x| x + 1);
 
+    log::info!("Sorting similarities...");
     let (ords, _) = arg_sort_big_to_small_2d(&sims.view()); // sort the data
+    log::info!("Sorting finished.");
 
     let selected_neighbours: Vec<usize> = {
         let neighbours_ref = &neighbours; // to avoid capture of neighbours
+        let mut count = 0;
 
         ords.rows()
             .into_iter()
             .enumerate()
             .flat_map(|(row_index, ord_row)| {
+                count += 1;
+                if count % 100000 == 0 {
+                    log::info!("Processing row {}/{}...", count, num_data);
+                }
                 ord_row
                     .iter()
                     .map(move |&col_index| neighbours_ref[[row_index, col_index]])
-                    .collect::<Vec<_>>() // to avoid capture of row.
+                    .collect::<Vec<_>>() // to avoid capture of neighbours.
             })
             .collect()
     };
