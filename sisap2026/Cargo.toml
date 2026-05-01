@@ -22,5 +22,4 @@ clap.workspace = true
 pretty_env_logger.workspace = true
 r_descent.workspace = true
 hdf5.workspace = true
-jemallocator = "0.5.4"
 half = "2.7.1"

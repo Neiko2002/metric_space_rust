@@ -22,8 +22,8 @@ use std::rc::Rc;
 use std::time::Instant;
 use utils::arg_sort_big_to_small_2d;
 
-#[global_allocator]
-static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+// #[global_allocator]
+// static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 /// clap parser
 #[derive(Parser, Debug)]
