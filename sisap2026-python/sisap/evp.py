@@ -2,7 +2,15 @@ import time
 import numpy as np
 
 class EvpBits:
+    """
+    Optimized version of EvpBits using Python's arbitrary-precision integers
+    for memory efficiency and fast scalar operations, while supporting fast
+    conversion back to NumPy for batched operations.
+    """
+    __slots__ = ['ones', 'negative_ones', 'dim']
+
     def __init__(self, ones, negative_ones, dim):
+        # ones and negative_ones are now Python integers representing bit vectors
         self.ones = ones
         self.negative_ones = negative_ones
         self.dim = dim
@@ -28,7 +36,11 @@ class EvpBits:
             elif val < 0:
                 negative_ones[idx] = True
                 
-        return cls(ones, negative_ones, dim)
+        # Pack to bytes, then integer
+        ones_int = int.from_bytes(np.packbits(ones).tobytes(), 'little')
+        negative_ones_int = int.from_bytes(np.packbits(negative_ones).tobytes(), 'little')
+        
+        return cls(ones_int, negative_ones_int, dim)
 
     @classmethod
     def from_embeddings(cls, dataset, non_zeros, chunk_size=8192):
@@ -53,8 +65,14 @@ class EvpBits:
             ones_mat[rows, top_indices] = top_vals > 0
             negative_ones_mat[rows, top_indices] = top_vals < 0
             
+            # Pack bit arrays and convert to integers
+            ones_packed = np.packbits(ones_mat, axis=1)
+            neg_packed = np.packbits(negative_ones_mat, axis=1)
+            
             for j in range(chunk.shape[0]):
-                data_evp.append(cls(ones_mat[j], negative_ones_mat[j], dim))
+                o_int = int.from_bytes(ones_packed[j].tobytes(), 'little')
+                n_int = int.from_bytes(neg_packed[j].tobytes(), 'little')
+                data_evp.append(cls(o_int, n_int, dim))
                 
         return data_evp
 
@@ -71,14 +89,14 @@ def get_max_similarity(dim, non_zeros):
 def evp_similarity(a, b):
     """
     Computes the EvpBits similarity between two EvpBits objects.
+    Highly optimized using Python's built-in fast integer bit counting.
     """
-    aa = np.logical_and(a.ones, b.ones).sum()
-    bb = np.logical_and(a.negative_ones, b.negative_ones).sum()
-    cc = np.logical_and(a.ones, b.negative_ones).sum()
-    dd = np.logical_and(b.ones, a.negative_ones).sum()
+    aa = (a.ones & b.ones).bit_count()
+    bb = (a.negative_ones & b.negative_ones).bit_count()
+    cc = (a.ones & b.negative_ones).bit_count()
+    dd = (b.ones & a.negative_ones).bit_count()
     
-    dim = a.dim
-    return float((aa + bb + dim * 2) - (cc + dd))
+    return float((aa + bb + a.dim * 2) - (cc + dd))
 
 def evp_similarity_batch(queries, targets):
     """
@@ -90,12 +108,32 @@ def evp_similarity_batch(queries, targets):
         return np.array([[]])
         
     dim = queries[0].dim
+    byte_len = (dim + 7) // 8
     
-    # Convert to ternary matrices (-1, 0, 1) and use float32 for BLAS speed
-    Q = (np.array([q.ones for q in queries], dtype=np.int8) - 
-         np.array([q.negative_ones for q in queries], dtype=np.int8)).astype(np.float32)
-    T_T = (np.array([t.ones for t in targets], dtype=np.int8) - 
-           np.array([t.negative_ones for t in targets], dtype=np.int8)).astype(np.float32).T
+    Q_len = len(queries)
+    T_len = len(targets)
+    
+    # 1. Convert integers to bytes, load into uint8 numpy arrays
+    Qo_bytes = b''.join(q.ones.to_bytes(byte_len, 'little') for q in queries)
+    Qn_bytes = b''.join(q.negative_ones.to_bytes(byte_len, 'little') for q in queries)
+    
+    To_bytes = b''.join(t.ones.to_bytes(byte_len, 'little') for t in targets)
+    Tn_bytes = b''.join(t.negative_ones.to_bytes(byte_len, 'little') for t in targets)
+    
+    Qo_pack = np.frombuffer(Qo_bytes, dtype=np.uint8).reshape(Q_len, byte_len)
+    Qn_pack = np.frombuffer(Qn_bytes, dtype=np.uint8).reshape(Q_len, byte_len)
+    To_pack = np.frombuffer(To_bytes, dtype=np.uint8).reshape(T_len, byte_len)
+    Tn_pack = np.frombuffer(Tn_bytes, dtype=np.uint8).reshape(T_len, byte_len)
+    
+    # 2. Unpack to boolean/uint8 arrays of correct dim
+    Qo_unpacked = np.unpackbits(Qo_pack, axis=1)[:, :dim]
+    Qn_unpacked = np.unpackbits(Qn_pack, axis=1)[:, :dim]
+    To_unpacked = np.unpackbits(To_pack, axis=1)[:, :dim]
+    Tn_unpacked = np.unpackbits(Tn_pack, axis=1)[:, :dim]
+    
+    # 3. Create ternary matrices
+    Q = (Qo_unpacked.astype(np.int8) - Qn_unpacked.astype(np.int8)).astype(np.float32)
+    T_T = (To_unpacked.astype(np.int8) - Tn_unpacked.astype(np.int8)).astype(np.float32).T
     
     return np.dot(Q, T_T) + 2 * dim
 
@@ -109,12 +147,21 @@ def compute_all_similarities_batch(evp_list, k_top=100, batch_size=1000):
     if N == 0:
         return np.array([])
     dim = evp_list[0].dim      
+    byte_len = (dim + 7) // 8
     
-    # Convert all EvpBits objects to a single ternary matrix (-1, 0, 1) in float32
     print("Re-assembling matrices from EvpBits objects for fast batched computation...", flush=True)
-    convert_start = time.time()  
-    T = (np.array([e.ones for e in evp_list], dtype=np.int8) - 
-         np.array([e.negative_ones for e in evp_list], dtype=np.int8)).astype(np.float32)
+    convert_start = time.time()
+    
+    To_bytes = b''.join(e.ones.to_bytes(byte_len, 'little') for e in evp_list)
+    Tn_bytes = b''.join(e.negative_ones.to_bytes(byte_len, 'little') for e in evp_list)
+    
+    To_pack = np.frombuffer(To_bytes, dtype=np.uint8).reshape(N, byte_len)
+    Tn_pack = np.frombuffer(Tn_bytes, dtype=np.uint8).reshape(N, byte_len)
+    
+    To_unpacked = np.unpackbits(To_pack, axis=1)[:, :dim]
+    Tn_unpacked = np.unpackbits(Tn_pack, axis=1)[:, :dim]
+    
+    T = (To_unpacked.astype(np.int8) - Tn_unpacked.astype(np.int8)).astype(np.float32)
     T_T = T.T
     print(f"Matrix re-assembly took {time.time() - convert_start:.2f} s")
     
