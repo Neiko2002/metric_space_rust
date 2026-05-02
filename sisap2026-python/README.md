@@ -1,11 +1,11 @@
 # SISAP 2026 Python
 
-Python environment for inspecting the SISAP 2026 HDF5 dataset.
+Python environment for processing and evaluating the SISAP 2026 HDF5 dataset using the EvpBits (sparsified ternary) approximation.
 
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) installed
-- HuggingFace token (for private repo access, optional)
+- HuggingFace token (optional, for private repo access)
 
 ## Setup
 
@@ -14,20 +14,39 @@ cd sisap2026-python
 uv sync
 ```
 
+## Project Structure
+
+- `sisap/`: Core library containing `EvpBits` logic and data loading utilities.
+- `task1.py`: Main evaluation script (Recall@15).
+- `tests/`: Unit tests and verification scripts.
+
 ## Usage
 
-To inspect the HDF5 file structure:
+### 1. Evaluate Task 1 (Recall)
+Computes the average Recall@15 for the dataset by comparing EvpBits results with the provided ground-truth KNNs.
 
 ```bash
-uv run python inspect_h5.py
+uv run python task1.py
 ```
 
-If not already cached, `hf_hub_download` will automatically download
-`benchmark-dev-wikipedia-bge-m3-small.h5` from the `SISAP-Challenges/SISAP2026` repository.
-
-To run the `debug_phase2` python equivalent (calculates EvpBits similarities and inner products like the Rust implementation):
+### 2. Verify Similarity Approximation
+Compares the exact float16 inner products against the normalized EvpBits similarity scores.
 
 ```bash
-uv run python debug_phase2.py
+uv run python tests/test_similarity.py
 ```
-This will automatically download/locate the same HDF5 dataset. You can configure `FILENAME`, `CHUNK_SIZE`, and `NON_ZEROS` directly at the top of the script if needed.
+
+### 3. Performance Benchmark
+Compares the execution speed of a single-threaded Python loop vs. the optimized matrix multiplication approach.
+
+```bash
+uv run python tests/test_speed.py
+```
+
+## Testing
+
+To run the unit tests:
+
+```bash
+uv run python tests/test_evp.py
+```

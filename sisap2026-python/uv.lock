@@ -388,12 +388,14 @@ source = { virtual = "." }
 dependencies = [
     { name = "h5py" },
     { name = "huggingface-hub" },
+    { name = "numpy" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "h5py" },
     { name = "huggingface-hub" },
+    { name = "numpy" },
 ]
 
 [package.metadata.requires-dev]
