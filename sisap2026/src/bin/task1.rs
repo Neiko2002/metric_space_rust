@@ -10,8 +10,6 @@ use std::time::Instant;
 struct Args {
     /// Path to HDF5 source
     source_path: String,
-    /// Path to HDF5 target (not used but kept for compatibility)
-    output_path: String,
 }
 
 fn main() -> Result<()> {
@@ -114,7 +112,7 @@ fn main() -> Result<()> {
             top_k.sort_unstable_by(|a, b| b.0.cmp(&a.0));
             
             let count = progress.fetch_add(1, Ordering::Relaxed) + 1;
-            if count % 1000 == 0 {
+            if count % 10000 == 0 {
                 log::info!("Processed {}/{} queries... ({:.2} s)", count, num_data, sim_start.elapsed().as_secs_f32());
             }
 
